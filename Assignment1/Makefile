@@ -1,4 +1,4 @@
-obj-m += modSort.o
+obj-m += sorting_module.o
 
 all:
 	make -C /lib/modules/`uname -r`/build/ M=$(PWD) modules
