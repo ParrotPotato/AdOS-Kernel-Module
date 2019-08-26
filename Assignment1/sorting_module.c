@@ -16,6 +16,7 @@
 #include <linux/sched.h>
 #include <linux/vmalloc.h>
 #include <linux/semaphore.h>
+#include <linux/string.h>
 
 MODULE_LICENSE("GPL");
 
@@ -27,9 +28,13 @@ enum{
 
 struct process_entry{
 	int pid;
-	void * buffer;
+	
+	int * int_buffer;
+	char ** string_buffer;
 	int type;
 	int size;
+	
+	int element_recieved;
 
 	struct list_head node;
 };
@@ -38,10 +43,12 @@ static void init_process_entry(struct process_entry * entry_ptr){
 	if(entry_ptr == NULL)
 		return;
 
-	entry_ptr->buffer = NULL;
-	entry_ptr->size = 0;
-	entry_ptr->type = SORT_NONE;
-	entry_ptr->pid = current->pid;
+	entry_ptr->int_buffer		= NULL;
+	entry_ptr->string_buffer	= NULL;
+	entry_ptr->size 		= 0;
+	entry_ptr->element_recieved 	= 0 ;
+	entry_ptr->type 		= SORT_NONE;
+	entry_ptr->pid 			= current->pid;
 
 	return;
 }
@@ -49,16 +56,12 @@ static void init_process_entry(struct process_entry * entry_ptr){
 static void clean_process_entry(struct process_entry * entry_ptr){
 	if(entry_ptr == NULL) return;
 
-	if(entry_ptr->buffer) vfree(entry_ptr->buffer);
+	if(entry_ptr->int_buffer) vfree(entry_ptr->int_buffer);
+	if(entry_ptr->string_buffer) vfree(entry_ptr->string_buffer);
 
 	return;
 }
 
-
-// TODO : 
-// 	  Attach mutex locks to all the list operations
-// 	  @Nitesh Meena
-//
 
 static struct list_head * process_list = NULL;
 static struct semaphore * process_list_lock = NULL;
@@ -90,6 +93,43 @@ static struct process_entry * get_process_entry(int pid){
 	return ret;
 }
 
+// simple implementation of bubble sort
+static int sort_int_array(int arr[], int n){
+	int i= 0,j = 0; 
+	
+	for( i = 0 ; i < n ; i++)
+	{
+		for(j = i + 1  ; j < n ; j++){
+			if(arr[i] < arr[j]){
+				arr[j] = arr[i] + arr[j];
+				arr[i] = arr[j] - arr[i];
+				arr[j] = arr[j] - arr[i];
+			}
+		}
+	}
+
+	return 0;
+}
+
+// simple implementation of bubble sort
+static int sort_string_array(char * arr[], int n){
+	int i = 0 , j = 0 ;
+	char * string_ptr = 0 ;	
+	
+	for( i = 0 ; i < n ; i++)
+	{
+		for(j = i + 1  ; j < n ; j++){
+			if(strcmp(arr[i], arr[j]) > 0){
+				string_ptr = arr[i];
+				arr[i] = arr[j];
+				arr[j] = string_ptr;
+			}
+		}
+	}
+
+	return 0;
+}
+
 
 static int process_open_handler(struct inode * iptr, 
 				struct file * fptr)
@@ -97,7 +137,6 @@ static int process_open_handler(struct inode * iptr,
 	struct process_entry * entry_ptr = NULL;
 
 	pr_info("Open Function Called \n");
-	pr_info("get_process_entry : entry\n");
 
 	
 	entry_ptr = get_process_entry(current->pid);
@@ -120,7 +159,6 @@ static int process_open_handler(struct inode * iptr,
 	
 	up(process_list_lock);
 
-	pr_info("get_process_entry : return\n");
 	return 0;
 }
 
@@ -131,7 +169,6 @@ static int process_close_handler(struct inode * iptr,
 	struct process_entry * entry_ptr = NULL;
 
 	pr_info("Close Function Called \n");
-	pr_info("get_process_entry : entry\n");
 	
 	entry_ptr = get_process_entry(current->pid);
 	
@@ -150,7 +187,6 @@ static int process_close_handler(struct inode * iptr,
 	
 	vfree(entry_ptr);	
 
-	pr_info("get_process_entry : return\n");
 	return 0;
 }
 
@@ -172,9 +208,92 @@ static ssize_t process_write_handler(struct file * fptr,
 				     size_t size, 
 				     loff_t * ppos)
 {
+	struct process_entry * entry_ptr = NULL;
 
 	pr_info("Write Function Called \n");
 
+	entry_ptr = get_process_entry(current->pid);
+
+	if(entry_ptr == NULL){
+		return -EINVAL;	
+	}
+
+	if(entry_ptr->type == SORT_NONE){
+	// Getting the first 2 bytes of the for the data descriptor 
+
+		pr_info("Initializing Sorting Data\n");
+
+		if(size != 2)
+		{
+			// return error code specific to this
+
+		       	pr_info("Error Occured");
+			return -EINVAL;
+		}
+
+		if(buffer[0] == 0xff)
+		{
+			entry_ptr->type = SORT_INT;
+			entry_ptr->size = buffer[1];
+
+			entry_ptr->int_buffer = (int *) vmalloc(sizeof(int32_t) * entry_ptr->size);
+		}
+		else if(buffer[0] == 0xf0)
+		{
+			entry_ptr->type = SORT_STRING;
+			entry_ptr->size = buffer[1];
+			
+			entry_ptr->string_buffer = (char **) vmalloc(sizeof(char *) * entry_ptr->size);
+		}
+		else
+		{
+			// return error code specific to this
+		       	pr_info("Error Occured");	
+			return -EINVAL;
+		}
+	}
+	else{
+	// Getting the actual array/string in the buffer 
+		pr_info("Reading data\n");
+
+		if(entry_ptr->type == SORT_INT && entry_ptr->element_recieved  < entry_ptr->size)
+		{
+			entry_ptr->int_buffer[entry_ptr->element_recieved] = buffer[0];
+			entry_ptr->element_recieved += 1 ;
+
+			if(entry_ptr->size == entry_ptr->element_recieved){
+				sort_int_array(entry_ptr->int_buffer, entry_ptr->size);
+
+				// @DEBUG : 
+				int i= 0 ;
+
+				printk(KERN_INFO "%d", entry_ptr->int_buffer[0]);
+				for (i=1 ; i < entry_point->size ; i++){
+					printk(KERN_CONT "%d", entry_point->int_buffer[i]);
+				}
+
+				printk("\n");
+			}
+
+
+		}
+		
+		else if(entry_ptr->type == SORT_STRING && entry_ptr->element_recieved < entry_ptr->size)
+		{
+			if(size < 0 || size > 100) return -EINVAL;
+
+			entry_ptr->string_buffer[entry_ptr->element_recieved] = (char *) vmalloc(sizeof(char) * size);
+			strcpy(entry_ptr->string_buffer[entry_ptr->element_recieved], buffer);
+
+			entry_ptr->element_recieved += 1 ;
+
+			if(entry_ptr->size == entry_ptr->element_recieved){
+				sort_string_array(entry_ptr->string_buffer, entry_ptr->size);
+			}
+			
+		}
+	}
+	
 	return size;
 } 
 
