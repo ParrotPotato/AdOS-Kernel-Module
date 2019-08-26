@@ -268,8 +268,8 @@ static ssize_t process_write_handler(struct file * fptr,
 				int i= 0 ;
 
 				printk(KERN_INFO "%d", entry_ptr->int_buffer[0]);
-				for (i=1 ; i < entry_point->size ; i++){
-					printk(KERN_CONT "%d", entry_point->int_buffer[i]);
+				for (i=1 ; i < entry_ptr->size ; i++){
+					printk(KERN_CONT "%d", entry_ptr->int_buffer[i]);
 				}
 
 				printk("\n");
