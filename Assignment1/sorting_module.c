@@ -1,8 +1,6 @@
 // TODO :
-// 	Add functionality to read and write operations
-// 	Implement the sorting function
-// 	@Nitesh Meena
-//
+// 	Remove the unnecessary printing statements and check more for the locking sitaation
+//	@nitesh-meena
 
 // Following macro makes each pr_info statement has a prifix of module name 
 
@@ -14,17 +12,17 @@
 #include <linux/init.h>
 #include <linux/limits.h>
 #include <linux/sched.h>
+
 #include <linux/vmalloc.h>
+
 #include <linux/semaphore.h>
 #include <linux/string.h>
 
-MODULE_LICENSE("GPL");
+#define SORT_TYPE_NONE	 0x00
+#define SORT_TYPE_INT	 0xff
+#define SORT_TYPE_STRING 0xf0
 
-enum{
-	SORT_NONE,
-	SORT_INT,
-	SORT_STRING
-};
+MODULE_LICENSE("GPL");
 
 struct process_entry{
 	int pid;
@@ -34,7 +32,9 @@ struct process_entry{
 	int type;
 	int size;
 	
-	int element_recieved;
+	int write_count;
+
+	int read_count;
 
 	struct list_head node;
 };
@@ -45,19 +45,29 @@ static void init_process_entry(struct process_entry * entry_ptr){
 
 	entry_ptr->int_buffer		= NULL;
 	entry_ptr->string_buffer	= NULL;
+	
 	entry_ptr->size 		= 0;
-	entry_ptr->element_recieved 	= 0 ;
-	entry_ptr->type 		= SORT_NONE;
+	entry_ptr->write_count 		= 0;
+	entry_ptr->read_count 		= 0;
+	
+	entry_ptr->type 		= SORT_TYPE_NONE;
 	entry_ptr->pid 			= current->pid;
 
 	return;
 }
 
 static void clean_process_entry(struct process_entry * entry_ptr){
+	int i = 0 ;
 	if(entry_ptr == NULL) return;
 
 	if(entry_ptr->int_buffer) vfree(entry_ptr->int_buffer);
-	if(entry_ptr->string_buffer) vfree(entry_ptr->string_buffer);
+	if(entry_ptr->string_buffer)
+	{
+		for(i=0 ; i < entry_ptr->size ; i++){
+			vfree(entry_ptr->string_buffer[i]);
+		}
+		vfree(entry_ptr->string_buffer);
+	}	
 
 	return;
 }
@@ -75,7 +85,6 @@ static struct process_entry * get_process_entry(int pid){
 	struct process_entry * entry_ptr = NULL;
 	struct list_head * list_ptr = NULL;
 
-	pr_info("get_process_entry : enter\n");
 	
 	if(down_interruptible(process_list_lock)){
 		return NULL;
@@ -88,19 +97,18 @@ static struct process_entry * get_process_entry(int pid){
 
 	up(process_list_lock);
 	
-	pr_info("get_process_entry : return\n");
 
 	return ret;
 }
 
 // simple implementation of bubble sort
-static int sort_int_array(int arr[], int n){
+static int sort_int_array(int32_t arr[], int n){
 	int i= 0,j = 0; 
 	
 	for( i = 0 ; i < n ; i++)
 	{
 		for(j = i + 1  ; j < n ; j++){
-			if(arr[i] < arr[j]){
+			if(arr[i] > arr[j]){
 				arr[j] = arr[i] + arr[j];
 				arr[i] = arr[j] - arr[i];
 				arr[j] = arr[j] - arr[i];
@@ -114,18 +122,26 @@ static int sort_int_array(int arr[], int n){
 // simple implementation of bubble sort
 static int sort_string_array(char * arr[], int n){
 	int i = 0 , j = 0 ;
-	char * string_ptr = 0 ;	
-	
+	char string_temp[100];	
+	pr_info("Sorting Strings\n");	
 	for( i = 0 ; i < n ; i++)
 	{
 		for(j = i + 1  ; j < n ; j++){
+			pr_info("Sorting %s, %s\n", arr[i], arr[j]);
 			if(strcmp(arr[i], arr[j]) > 0){
-				string_ptr = arr[i];
-				arr[i] = arr[j];
-				arr[j] = string_ptr;
+				memcpy(string_temp, arr[i], 100);
+				memcpy(arr[i], arr[j], 100);
+				memcpy(arr[j], string_temp, 100);	
 			}
 		}
 	}
+
+	for(i = 0 ; i < n ; i++)
+	{
+		pr_info("%s ", arr[i]);
+	}
+
+	pr_info("\n");
 
 	return 0;
 }
@@ -136,9 +152,6 @@ static int process_open_handler(struct inode * iptr,
 {
 	struct process_entry * entry_ptr = NULL;
 
-	pr_info("Open Function Called \n");
-
-	
 	entry_ptr = get_process_entry(current->pid);
 	if(entry_ptr){
 		pr_info("One instance of file already open\n");
@@ -155,6 +168,7 @@ static int process_open_handler(struct inode * iptr,
 		return -ERESTARTSYS;
 	}
 
+	pr_info("Adding process entry for pid %d\n", current->pid);
 	list_add(&entry_ptr->node, process_list);	
 	
 	up(process_list_lock);
@@ -168,7 +182,6 @@ static int process_close_handler(struct inode * iptr,
 
 	struct process_entry * entry_ptr = NULL;
 
-	pr_info("Close Function Called \n");
 	
 	entry_ptr = get_process_entry(current->pid);
 	
@@ -178,6 +191,8 @@ static int process_close_handler(struct inode * iptr,
 	if(down_interruptible(process_list_lock)){
 		return -ERESTARTSYS;
 	}
+
+	pr_info("Removing process entry for pid %d\n", current->pid);
 
 	list_del(&entry_ptr->node);
 
@@ -195,12 +210,43 @@ static ssize_t process_read_handler(struct file * fptr,
 				    size_t size, 
 				    loff_t * ppos)
 {
-
-	pr_info("Read Function Called \n");
+	struct process_entry * entry_ptr = NULL;
+	int ret = 0 ;	
+	entry_ptr = get_process_entry(current->pid);
 	
-		
+	if(entry_ptr == NULL) return -EINVAL;
 
-	return 0;
+	if(entry_ptr->type == SORT_TYPE_NONE || entry_ptr->size == 0 || entry_ptr->write_count != entry_ptr->size){
+		return -EACCES;
+	}
+	
+	if(entry_ptr->read_count < entry_ptr->size)
+	{
+		if(entry_ptr->type == SORT_TYPE_INT)
+		{
+			pr_info("Reading : %d\n", entry_ptr->int_buffer[entry_ptr->read_count]);
+			memcpy(buffer, &entry_ptr->int_buffer[entry_ptr->read_count], sizeof(int32_t));
+			entry_ptr->read_count += 1;
+			return sizeof(int32_t);
+		}
+		if(entry_ptr->type == SORT_TYPE_STRING)
+		{
+			// @TEST: for the usersapce and kernelspace mapping 
+			
+			if(size < 100) 
+			{
+				memcpy(buffer, entry_ptr->string_buffer[entry_ptr->read_count], size);
+			}
+			else {
+				memcpy(buffer, entry_ptr->string_buffer[entry_ptr->read_count], 100);
+			}	
+			ret = strlen(entry_ptr->string_buffer[entry_ptr->read_count]);
+			entry_ptr->read_count += 1;
+			return ret; 
+		}
+	}
+
+	return -EACCES;
 }
 
 static ssize_t process_write_handler(struct file * fptr, 
@@ -210,91 +256,87 @@ static ssize_t process_write_handler(struct file * fptr,
 {
 	struct process_entry * entry_ptr = NULL;
 
-	pr_info("Write Function Called \n");
-
 	entry_ptr = get_process_entry(current->pid);
 
 	if(entry_ptr == NULL){
 		return -EINVAL;	
 	}
 
-	if(entry_ptr->type == SORT_NONE){
+	if(entry_ptr->type == SORT_TYPE_NONE){
 	// Getting the first 2 bytes of the for the data descriptor 
 
 		pr_info("Initializing Sorting Data\n");
-
 		if(size != 2)
 		{
 			// return error code specific to this
 
-		       	pr_info("Error Occured");
+		       	pr_info("Error Occured : Invalid size of %lu\n", size);
 			return -EINVAL;
 		}
 
-		if(buffer[0] == 0xff)
+		if((unsigned char)buffer[0] == SORT_TYPE_INT)
 		{
-			entry_ptr->type = SORT_INT;
-			entry_ptr->size = buffer[1];
+			entry_ptr->type = SORT_TYPE_INT;
+			entry_ptr->size = (int)buffer[1];
 
 			entry_ptr->int_buffer = (int *) vmalloc(sizeof(int32_t) * entry_ptr->size);
 		}
-		else if(buffer[0] == 0xf0)
+		else if((unsigned char)buffer[0] == SORT_TYPE_STRING)
 		{
-			entry_ptr->type = SORT_STRING;
+			entry_ptr->type = SORT_TYPE_STRING;
 			entry_ptr->size = buffer[1];
 			
-			entry_ptr->string_buffer = (char **) vmalloc(sizeof(char *) * entry_ptr->size);
+			entry_ptr->string_buffer = (char **) vmalloc(sizeof(char **) * entry_ptr->size);
 		}
 		else
 		{
 			// return error code specific to this
-		       	pr_info("Error Occured");	
+		       	pr_info("Error Occured : Invalid sorting option : (int:%d - SORT_TYPE_INT : %d - your given type) \n", SORT_TYPE_INT, buffer[0]);	
 			return -EINVAL;
 		}
 	}
 	else{
 	// Getting the actual array/string in the buffer 
-		pr_info("Reading data\n");
 
-		if(entry_ptr->type == SORT_INT && entry_ptr->element_recieved  < entry_ptr->size)
+		if(entry_ptr->type == SORT_TYPE_INT && entry_ptr->write_count  < entry_ptr->size)
 		{
-			entry_ptr->int_buffer[entry_ptr->element_recieved] = buffer[0];
-			entry_ptr->element_recieved += 1 ;
+			memcpy(&entry_ptr->int_buffer[entry_ptr->write_count], buffer, sizeof(int32_t));
+			entry_ptr->write_count += 1 ;
 
-			if(entry_ptr->size == entry_ptr->element_recieved){
+			if(entry_ptr->size == entry_ptr->write_count)
+			{
 				sort_int_array(entry_ptr->int_buffer, entry_ptr->size);
-
-				// @DEBUG : 
-				int i= 0 ;
-
-				printk(KERN_INFO "%d", entry_ptr->int_buffer[0]);
-				for (i=1 ; i < entry_ptr->size ; i++){
-					printk(KERN_CONT "%d", entry_ptr->int_buffer[i]);
-				}
-
-				printk("\n");
 			}
-
-
 		}
 		
-		else if(entry_ptr->type == SORT_STRING && entry_ptr->element_recieved < entry_ptr->size)
+		else if(entry_ptr->type == SORT_TYPE_STRING && entry_ptr->write_count < entry_ptr->size && size < 100 && size > 1)
 		{
 			if(size < 0 || size > 100) return -EINVAL;
 
-			entry_ptr->string_buffer[entry_ptr->element_recieved] = (char *) vmalloc(sizeof(char) * size);
-			strcpy(entry_ptr->string_buffer[entry_ptr->element_recieved], buffer);
+			entry_ptr->string_buffer[entry_ptr->write_count] = (char *) vmalloc(100);
+			memset(entry_ptr->string_buffer[entry_ptr->write_count], 0, 100);
+			
+			pr_info("String-from %s\n", buffer);
 
-			entry_ptr->element_recieved += 1 ;
+			memcpy(entry_ptr->string_buffer[entry_ptr->write_count], buffer, size);
+			pr_info("String-to %s\n", entry_ptr->string_buffer[entry_ptr->write_count]);
 
-			if(entry_ptr->size == entry_ptr->element_recieved){
+			entry_ptr->write_count += 1 ;
+			if(entry_ptr->size == entry_ptr->write_count)
+			{
+				pr_info("Sorting input array of string\n");
 				sort_string_array(entry_ptr->string_buffer, entry_ptr->size);
 			}
 			
 		}
+
+		else
+		{
+			return -EINVAL;
+		}
 	}
 	
-	return size;
+	return entry_ptr->size - entry_ptr->write_count;
 } 
 
 static struct file_operations process_operations = 
@@ -312,7 +354,20 @@ static struct file_operations process_operations =
 // 	  @Nitesh Meena
 // 	 
 static void clean_process_list(void){
-	return;
+	
+	struct process_entry * process_ptr = NULL;
+	struct list_head * list_ptr 	   = NULL;
+
+	while(!list_empty(process_list))
+	{
+		list_ptr = process_list->next;
+		process_ptr = list_entry(list_ptr, struct process_entry, node);
+
+		list_del(list_ptr);
+		clean_process_entry(process_ptr);
+
+		vfree(process_ptr);
+	}
 }
 
 static __init int init_module_assign(void)
