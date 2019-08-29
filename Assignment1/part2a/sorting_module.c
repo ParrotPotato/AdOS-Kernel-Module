@@ -249,6 +249,8 @@ static ssize_t process_read_handler(struct file * fptr,
 	return -EACCES;
 }
 
+
+
 static ssize_t process_write_handler(struct file * fptr, 
 				     const char __user * buffer, 
 				     size_t size, 
