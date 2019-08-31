@@ -20,14 +20,215 @@
 
 MODULE_LICENSE("GPL");
 
-struct Node{
-	void * value;
-	int type 
+#define PB2_SET_TYPE 	_IOW(0x10, 0x31, int32_t*)
+#define PB2_SET_ORDER 	_IOW(0x10, 0x32, int32_t*)
+#define PB2_SET_INFO 	_IOW(0x10, 0x33, int32_t*)
+#define PB2_SET_OBJ	_IOW(0x10, 0x34, int32_t*)
+
+#define DATA_TYPE_NONE	 0x00
+#define DATA_TYPE_INT	 0xff
+#define DATA_TYPE_STRING 0xf0
+
+#define GRAPH_IN_ORDER	 0x00
+#define GRAPH_POST_ORDER 0x01
+#define GRAPH_PRE_ORDER	 0x02
+
+struct obj_info{
+	int32_t deg1cnt;
+	int32_t deg2cnt;
+	int32_t deg3cnt;
+
+	int32_t maxdepth;
+	int32_t mindepth;
+};
+
+struct search_obj{
+	char objtype;
+	char found;
+
+	int32_t int_obj;
+	char 	str[100];
+	int32_t len;
+};
+
+struct graph_node{
+	struct graph_node * right;
+	struct graph_node * left;
+	struct graph_node * parent;
+	
+	char type;
+
+	int32_t int_value;
+	char str[100];
+
+	int len;
+};
+
+//// GRAPH RELATED FUNCTIONS 
+
+struct graph_node * create_child_node(struct graph_node * parent)
+{
+	struct graph_node * node = (struct graph_node *) vmalloc(sizeof(struct graph_node));
+	
+	node->parent 	= parent;
+	node->type	= DATA_TYPE_NONE;
+	
+	node->left 	= NULL;
+	node->right	= NULL;
+
+	node->len	= -1;
+
+	return node;
 }
 
+struct graph_node * get_left_node(struct graph_node * parent)
+{
+	if(parent == NULL)
+		return NULL;
+
+	if(parent->left == NULL)
+	{
+		parent->left = create_child_node(parent);
+	}
+
+	return parent->left;
+}
+
+struct graph_node * get_right_node(struct graph_node * parent)
+{
+	
+	if(parent == NULL)
+		return NULL;
+
+	if(parent->right == NULL)
+	{
+		parent->right = create_child_node(parent);
+	}
+
+	return parent->right;
+}
+
+void add_node(struct graph_node * root, void * buffer, char type )
+{
+	// Base case for the tree
+	if(root->type == DATA_TYPE_NONE)
+	{
+		root->type = type;
+
+		if((unsigned int)type == DATA_TYPE_INT)
+		{
+			root->int_value = *(int32_t *)(buffer);
+		}
+		else if((unsigned int)type == DATA_TYPE_STRING)
+		{
+			if(strlen((char *)buffer) > 100){
+				// RETURN ERROR
+			}
+
+			strcpy(root->str, (char *)buffer);
+			root->len = strlen(root->str);
+		}
+	}
+	
+	if((unsigned int)root->type == DATA_TYPE_STRING)
+	{
+		if(strcmp(root->str, (char *)buffer) > 0)
+		{	
+			add_node(get_right_node(root), buffer, type);
+		}
+		else
+		{
+			add_node(get_left_node(root), buffer, type);
+		} 
+	}
+	else if((unsigned int)root->type == DATA_TYPE_INT)
+	{
+		if(*(int32_t *)(buffer) > root->int_value)
+		{
+			add_node(get_left_node(root), buffer, type);
+		}
+		else 
+		{
+			add_node(get_right_node(root), buffer, type);
+		}
+	}
+}
+
+struct graph_node * search_graph(struct graph_node * root, void * buffer)
+{
+	struct graph_node * current_node = root;
+	char type = root->type ;
+
+	while(current_node != NULL)
+	{
+		if((unsigned int)type == DATA_TYPE_INT)
+		{
+			if(current_node->int_value > *(int32_t *)(buffer))
+			{
+				current_node = current_node->left;
+			}
+			else if(current_node->int_value < *(int32_t *)(buffer))
+			{
+				current_node = current_node->right;
+			}
+			else
+			{
+				return current_node;
+			}
+		}
+		else if((unsigned int)type == DATA_TYPE_STRING)
+		{
+			if((unsigned int)type == DATA_TYPE_INT)
+			{
+				if(strcmp(current_node->str, (char *) buffer) == 0)
+				{
+					return current_node;
+				}
+				else if(strcmp(current_node->str, (char *) buffer ) > 0)
+				{
+					current_node = current_node->left;
+				}
+				else
+				{
+					current_node = current_node->right;
+				}
+			}
+		}	
+	}
+
+	return NULL;
+}
+
+struct graph_node * traverse_graph(struct graph_node * node, int mode)
+{
+	// TODO: 
+	// 	create a state machine for graph traversal 
+	// 	- nitesh
+	
+	return NULL;
+}
+
+void delete_graph(struct graph_node * root)
+{
+	return;
+}
+
+//// ENDING
+
+
+
 struct process_entry{
+	
 	int pid;
 	
+	int size;
+
+	int write_count;
+	int read_count;
+
+	int type;
+	
+	struct graph_node * graph;
 	
 	struct list_head node;
 };
@@ -36,32 +237,23 @@ static void init_process_entry(struct process_entry * entry_ptr){
 	if(entry_ptr == NULL)
 		return;
 
-	entry_ptr->int_buffer		= NULL;
-	entry_ptr->string_buffer	= NULL;
+	entry_ptr->graph 		= NULL;	
 	
 	entry_ptr->size 		= 0;
 	entry_ptr->write_count 		= 0;
 	entry_ptr->read_count 		= 0;
 	
-	entry_ptr->type 		= SORT_TYPE_NONE;
+	entry_ptr->type 		= DATA_TYPE_NONE;
 	entry_ptr->pid 			= current->pid;
 
 	return;
 }
 
 static void clean_process_entry(struct process_entry * entry_ptr){
-	int i = 0 ;
 	if(entry_ptr == NULL) return;
 
-	if(entry_ptr->int_buffer) vfree(entry_ptr->int_buffer);
-	if(entry_ptr->string_buffer)
-	{
-		for(i=0 ; i < entry_ptr->size ; i++){
-			vfree(entry_ptr->string_buffer[i]);
-		}
-		vfree(entry_ptr->string_buffer);
-	}	
-
+	delete_graph(entry_ptr->graph);
+	
 	return;
 }
 
@@ -93,52 +285,6 @@ static struct process_entry * get_process_entry(int pid){
 
 	return ret;
 }
-
-// simple implementation of bubble sort
-static int sort_int_array(int32_t arr[], int n){
-	int i= 0,j = 0; 
-	
-	for( i = 0 ; i < n ; i++)
-	{
-		for(j = i + 1  ; j < n ; j++){
-			if(arr[i] > arr[j]){
-				arr[j] = arr[i] + arr[j];
-				arr[i] = arr[j] - arr[i];
-				arr[j] = arr[j] - arr[i];
-			}
-		}
-	}
-
-	return 0;
-}
-
-// simple implementation of bubble sort
-static int sort_string_array(char * arr[], int n){
-	int i = 0 , j = 0 ;
-	char string_temp[100];	
-	pr_info("Sorting Strings\n");	
-	for( i = 0 ; i < n ; i++)
-	{
-		for(j = i + 1  ; j < n ; j++){
-			pr_info("Sorting %s, %s\n", arr[i], arr[j]);
-			if(strcmp(arr[i], arr[j]) > 0){
-				memcpy(string_temp, arr[i], 100);
-				memcpy(arr[i], arr[j], 100);
-				memcpy(arr[j], string_temp, 100);	
-			}
-		}
-	}
-
-	for(i = 0 ; i < n ; i++)
-	{
-		pr_info("%s ", arr[i]);
-	}
-
-	pr_info("\n");
-
-	return 0;
-}
-
 
 static int process_open_handler(struct inode * iptr, 
 				struct file * fptr)
@@ -203,43 +349,8 @@ static ssize_t process_read_handler(struct file * fptr,
 				    size_t size, 
 				    loff_t * ppos)
 {
-	struct process_entry * entry_ptr = NULL;
-	int ret = 0 ;	
-	entry_ptr = get_process_entry(current->pid);
 	
-	if(entry_ptr == NULL) return -EINVAL;
-
-	if(entry_ptr->type == SORT_TYPE_NONE || entry_ptr->size == 0 || entry_ptr->write_count != entry_ptr->size){
-		return -EACCES;
-	}
-	
-	if(entry_ptr->read_count < entry_ptr->size)
-	{
-		if(entry_ptr->type == SORT_TYPE_INT)
-		{
-			pr_info("Reading : %d\n", entry_ptr->int_buffer[entry_ptr->read_count]);
-			memcpy(buffer, &entry_ptr->int_buffer[entry_ptr->read_count], sizeof(int32_t));
-			entry_ptr->read_count += 1;
-			return sizeof(int32_t);
-		}
-		if(entry_ptr->type == SORT_TYPE_STRING)
-		{
-			// @TEST: for the usersapce and kernelspace mapping 
-			
-			if(size < 100) 
-			{
-				memcpy(buffer, entry_ptr->string_buffer[entry_ptr->read_count], size);
-			}
-			else {
-				memcpy(buffer, entry_ptr->string_buffer[entry_ptr->read_count], 100);
-			}	
-			ret = strlen(entry_ptr->string_buffer[entry_ptr->read_count]);
-			entry_ptr->read_count += 1;
-			return ret; 
-		}
-	}
-
-	return -EACCES;
+	return 0; 
 }
 
 static ssize_t process_write_handler(struct file * fptr, 
@@ -247,89 +358,7 @@ static ssize_t process_write_handler(struct file * fptr,
 				     size_t size, 
 				     loff_t * ppos)
 {
-	struct process_entry * entry_ptr = NULL;
-
-	entry_ptr = get_process_entry(current->pid);
-
-	if(entry_ptr == NULL){
-		return -EINVAL;	
-	}
-
-	if(entry_ptr->type == SORT_TYPE_NONE){
-	// Getting the first 2 bytes of the for the data descriptor 
-
-		pr_info("Initializing Sorting Data\n");
-		if(size != 2)
-		{
-			// return error code specific to this
-
-		       	pr_info("Error Occured : Invalid size of %lu\n", size);
-			return -EINVAL;
-		}
-
-		if((unsigned char)buffer[0] == SORT_TYPE_INT)
-		{
-			entry_ptr->type = SORT_TYPE_INT;
-			entry_ptr->size = (int)buffer[1];
-
-			entry_ptr->int_buffer = (int *) vmalloc(sizeof(int32_t) * entry_ptr->size);
-		}
-		else if((unsigned char)buffer[0] == SORT_TYPE_STRING)
-		{
-			entry_ptr->type = SORT_TYPE_STRING;
-			entry_ptr->size = buffer[1];
-			
-			entry_ptr->string_buffer = (char **) vmalloc(sizeof(char **) * entry_ptr->size);
-		}
-		else
-		{
-			// return error code specific to this
-		       	pr_info("Error Occured : Invalid sorting option : (int:%d - SORT_TYPE_INT : %d - your given type) \n", SORT_TYPE_INT, buffer[0]);	
-			return -EINVAL;
-		}
-	}
-	else{
-	// Getting the actual array/string in the buffer 
-
-		if(entry_ptr->type == SORT_TYPE_INT && entry_ptr->write_count  < entry_ptr->size)
-		{
-			memcpy(&entry_ptr->int_buffer[entry_ptr->write_count], buffer, sizeof(int32_t));
-			entry_ptr->write_count += 1 ;
-
-			if(entry_ptr->size == entry_ptr->write_count)
-			{
-				sort_int_array(entry_ptr->int_buffer, entry_ptr->size);
-			}
-		}
-		
-		else if(entry_ptr->type == SORT_TYPE_STRING && entry_ptr->write_count < entry_ptr->size && size < 100 && size > 1)
-		{
-			if(size < 0 || size > 100) return -EINVAL;
-
-			entry_ptr->string_buffer[entry_ptr->write_count] = (char *) vmalloc(100);
-			memset(entry_ptr->string_buffer[entry_ptr->write_count], 0, 100);
-			
-			pr_info("String-from %s\n", buffer);
-
-			memcpy(entry_ptr->string_buffer[entry_ptr->write_count], buffer, size);
-			pr_info("String-to %s\n", entry_ptr->string_buffer[entry_ptr->write_count]);
-
-			entry_ptr->write_count += 1 ;
-			if(entry_ptr->size == entry_ptr->write_count)
-			{
-				pr_info("Sorting input array of string\n");
-				sort_string_array(entry_ptr->string_buffer, entry_ptr->size);
-			}
-			
-		}
-
-		else
-		{
-			return -EINVAL;
-		}
-	}
-	
-	return entry_ptr->size - entry_ptr->write_count;
+	return size;
 } 
 
 static struct file_operations process_operations = 
@@ -378,6 +407,7 @@ static __init int init_module_assign(void)
 	pr_info("Process Created\n");	
 	return 0;
 }
+
 
 static __exit void exit_module_assign(void)
 {
