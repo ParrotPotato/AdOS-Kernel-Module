@@ -33,6 +33,10 @@ MODULE_LICENSE("GPL");
 #define GRAPH_POST_ORDER 0x01
 #define GRAPH_PRE_ORDER	 0x02
 
+#define TRAV_LEFT_DONE 	 0x02
+#define TRAV_RIGHT_DONE  0x04
+#define TRAV_NODE_DONE	 0x08
+
 struct obj_info{
 	int32_t deg1cnt;
 	int32_t deg2cnt;
@@ -62,10 +66,16 @@ struct graph_node{
 	char str[100];
 
 	int len;
+
+	int traverse;
 };
 
 //// GRAPH RELATED FUNCTIONS 
 
+// TODO:
+// 	tests add_node using inmodule function calls 
+// 	- nitesh
+//
 struct graph_node * create_child_node(struct graph_node * parent)
 {
 	struct graph_node * node = (struct graph_node *) vmalloc(sizeof(struct graph_node));
@@ -75,6 +85,7 @@ struct graph_node * create_child_node(struct graph_node * parent)
 	
 	node->left 	= NULL;
 	node->right	= NULL;
+	node->traverse	= 0;
 
 	node->len	= -1;
 
@@ -153,7 +164,9 @@ void add_node(struct graph_node * root, void * buffer, char type )
 		}
 	}
 }
-
+// TODO:
+// 	test search_graph using inmodule function calls
+// 	- nitesh
 struct graph_node * search_graph(struct graph_node * root, void * buffer)
 {
 	struct graph_node * current_node = root;
@@ -199,11 +212,122 @@ struct graph_node * search_graph(struct graph_node * root, void * buffer)
 	return NULL;
 }
 
+
+// The following is the group of functions used for traversal 
+// through the graph
+// 	- nitesh
+
+// TODO:
+// 	test the traversal order using inmodule function calls
+// 	- nitesh
+
+int is_left_traversed(struct graph_node * node)
+{
+	return (node->traverse & TRAV_LEFT_DONE);
+}
+
+int is_right_traversed(struct graph_node * node)
+{
+	return (node->traverse & TRAV_RIGHT_DONE);
+}
+
+int is_node_traversed(struct graph_node * node)
+{
+	return (node->traverse & TRAV_NODE_DONE);
+}
+
+int is_node_done(struct graph_node * node)
+{
+	return ((node->traverse) & (TRAV_NODE_DONE | TRAV_RIGHT_DONE | TRAV_LEFT_DONE));
+}
+
+struct graph_node * in_order_traversal(struct graph_node * node)
+{
+	if(is_node_done(node))
+	{
+		node->traverse_graph = 0;
+		return node->parent;
+	}
+	else if(!is_left_traversed(node))
+	{
+		node->traverse = node->traverse | TRAV_LEFT_DONE;
+		return node->left;
+	}
+	else if(!is_node_traversed(node))
+	{
+		node->traverse = node->traverse | TRAV_NODE_DONE;
+		return node;
+	}
+	else if(!is_right_traversed(node))
+	{
+		node->traverse = node->traverse | TRAV_RIGHT_DONE;
+		return node->right;
+	}
+}
+
+struct graph_node * pre_order_traversal(struct graph_node * node)
+{
+	if(is_node_done(node))
+	{
+		node->traverse_graph = 0;
+		return node->parent;
+	}
+	else if(!is_node_traversed(node))
+	{
+		node->traverse = node->traverse | TRAV_NODE_DONE;
+		return node;
+	}
+	else if(!is_left_traversed(node))
+	{
+		node->traverse = node->traverse | TRAV_LEFT_DONE;
+		return node->left;
+	}
+	else if(!is_right_traversed(node))
+	{
+		node->traverse = node->traverse | TRAV_RIGHT_DONE;
+		return node->right;
+	}
+}
+
+struct graph_node * post_order_traversal(struct graph_node * node)
+{
+	
+	if(is_node_done(node))
+	{
+		node->traverse_graph = 0;
+		return node->parent;
+	}
+	else if(!is_left_traversed(node))
+	{
+		node->traverse = node->traverse | TRAV_LEFT_DONE;
+		return node->left;
+	}
+	else if(!is_right_traversed(node))
+	{
+		node->traverse = node->traverse | TRAV_RIGHT_DONE;
+		return node->right;
+	}
+	else if(!is_node_traversed(node))
+	{
+		node->traverse = node->traverse | TRAV_NODE_DONE;
+		return node;
+	}
+}
+
 struct graph_node * traverse_graph(struct graph_node * node, int mode)
 {
-	// TODO: 
-	// 	create a state machine for graph traversal 
-	// 	- nitesh
+	if(mode == GRAPH_IN_ORDER)
+	{
+		return in_order_traversal(node);
+	}
+	else if(mode == GRAPH_PRE_ORDER)
+	{
+		return pre_order_traversal(node);
+	}
+	else if(mode == GRAPH_POST_ORDER)
+	{
+		return post_order_traversal(node);
+	}
 	
 	return NULL;
 }
