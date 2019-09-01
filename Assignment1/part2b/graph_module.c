@@ -20,10 +20,10 @@
 
 MODULE_LICENSE("GPL");
 
-#define PB2_SET_TYPE 	_IOW(0x10, 0x31, int32_t*)
-#define PB2_SET_ORDER 	_IOW(0x10, 0x32, int32_t*)
-#define PB2_SET_INFO 	_IOW(0x10, 0x33, int32_t*)
-#define PB2_SET_OBJ	_IOW(0x10, 0x34, int32_t*)
+#define PB2_SET_TYPE 	 _IOW(0x10, 0x31, int32_t*)
+#define PB2_SET_ORDER 	 _IOW(0x10, 0x32, int32_t*)
+#define PB2_SET_INFO 	 _IOW(0x10, 0x33, int32_t*)
+#define PB2_SET_OBJ	 _IOW(0x10, 0x34, int32_t*)
 
 #define DATA_TYPE_NONE	 0x00
 #define DATA_TYPE_INT	 0xff
@@ -85,9 +85,41 @@ struct graph_node * create_child_node(struct graph_node * parent)
 	
 	node->left 	= NULL;
 	node->right	= NULL;
-	node->traverse	= 0;
+	node->traverse	= TRAV_LEFT_DONE | TRAV_RIGHT_DONE;
+
+	node->int_value = 0;
+	memset(node->str, 0, 100);
 
 	node->len	= -1;
+
+	return node;
+}
+
+struct graph_node * create_root_node(void * buffer, char type)
+{
+	struct graph_node * node = (struct graph_node *) vmalloc(sizeof(struct graph_node));
+
+	node->parent = NULL;
+	node->type = DATA_TYPE_INT;
+
+	node->left = NULL;
+	node->right = NULL;
+	node->traverse = TRAV_RIGHT_DONE | TRAV_LEFT_DONE;
+
+	node->len = -1;
+	
+	node->int_value = 0;
+	memset(node->str, 0, 100);
+
+	if((unsigned char) type == DATA_TYPE_INT)
+	{
+		node->int_value = * (int32_t *) buffer;
+	}
+	else if((unsigned char) type == DATA_TYPE_STRING)
+	{
+		strcpy(node->str, (char *)buffer);
+		node->len = strlen((char *) buffer);
+	}
 
 	return node;
 }
@@ -100,6 +132,7 @@ struct graph_node * get_left_node(struct graph_node * parent)
 	if(parent->left == NULL)
 	{
 		parent->left = create_child_node(parent);
+		parent->traverse &= ~(1 << 1);	
 	}
 
 	return parent->left;
@@ -114,6 +147,7 @@ struct graph_node * get_right_node(struct graph_node * parent)
 	if(parent->right == NULL)
 	{
 		parent->right = create_child_node(parent);
+		parent->traverse &= ~(1 << 2);
 	}
 
 	return parent->right;
@@ -126,11 +160,11 @@ void add_node(struct graph_node * root, void * buffer, char type )
 	{
 		root->type = type;
 
-		if((unsigned int)type == DATA_TYPE_INT)
+		if((unsigned char)type == DATA_TYPE_INT)
 		{
 			root->int_value = *(int32_t *)(buffer);
 		}
-		else if((unsigned int)type == DATA_TYPE_STRING)
+		else if((unsigned char)type == DATA_TYPE_STRING)
 		{
 			if(strlen((char *)buffer) > 100){
 				// RETURN ERROR
@@ -139,9 +173,11 @@ void add_node(struct graph_node * root, void * buffer, char type )
 			strcpy(root->str, (char *)buffer);
 			root->len = strlen(root->str);
 		}
+
+		return;
 	}
 	
-	if((unsigned int)root->type == DATA_TYPE_STRING)
+	if((unsigned char)root->type == DATA_TYPE_STRING)
 	{
 		if(strcmp(root->str, (char *)buffer) > 0)
 		{	
@@ -152,7 +188,7 @@ void add_node(struct graph_node * root, void * buffer, char type )
 			add_node(get_left_node(root), buffer, type);
 		} 
 	}
-	else if((unsigned int)root->type == DATA_TYPE_INT)
+	else if((unsigned char)root->type == DATA_TYPE_INT)
 	{
 		if(*(int32_t *)(buffer) > root->int_value)
 		{
@@ -174,7 +210,7 @@ struct graph_node * search_graph(struct graph_node * root, void * buffer)
 
 	while(current_node != NULL)
 	{
-		if((unsigned int)type == DATA_TYPE_INT)
+		if((unsigned char)type == DATA_TYPE_INT)
 		{
 			if(current_node->int_value > *(int32_t *)(buffer))
 			{
@@ -189,9 +225,9 @@ struct graph_node * search_graph(struct graph_node * root, void * buffer)
 				return current_node;
 			}
 		}
-		else if((unsigned int)type == DATA_TYPE_STRING)
+		else if((unsigned char)type == DATA_TYPE_STRING)
 		{
-			if((unsigned int)type == DATA_TYPE_INT)
+			if((unsigned char)type == DATA_TYPE_INT)
 			{
 				if(strcmp(current_node->str, (char *) buffer) == 0)
 				{
@@ -221,120 +257,14 @@ struct graph_node * search_graph(struct graph_node * root, void * buffer)
 // 	test the traversal order using inmodule function calls
 // 	- nitesh
 
-int is_left_traversed(struct graph_node * node)
+void TEST_show_all_nodes(struct graph_node * node)
 {
-	return (node->traverse & TRAV_LEFT_DONE);
-}
+	if(node == NULL)
+		return;
 
-int is_right_traversed(struct graph_node * node)
-{
-	return (node->traverse & TRAV_RIGHT_DONE);
-}
-
-int is_node_traversed(struct graph_node * node)
-{
-	return (node->traverse & TRAV_NODE_DONE);
-}
-
-int is_node_done(struct graph_node * node)
-{
-	return ((node->traverse) & (TRAV_NODE_DONE | TRAV_RIGHT_DONE | TRAV_LEFT_DONE));
-}
-
-struct graph_node * in_order_traversal(struct graph_node * node)
-{
-	if(is_node_done(node))
-	{
-		node->traverse_graph = 0;
-		return node->parent;
-	}
-	else if(!is_left_traversed(node))
-	{
-		node->traverse = node->traverse | TRAV_LEFT_DONE;
-		return node->left;
-	}
-	else if(!is_node_traversed(node))
-	{
-		node->traverse = node->traverse | TRAV_NODE_DONE;
-		return node;
-	}
-	else if(!is_right_traversed(node))
-	{
-		node->traverse = node->traverse | TRAV_RIGHT_DONE;
-		return node->right;
-	}
-}
-
-struct graph_node * pre_order_traversal(struct graph_node * node)
-{
-	if(is_node_done(node))
-	{
-		node->traverse_graph = 0;
-		return node->parent;
-	}
-	else if(!is_node_traversed(node))
-	{
-		node->traverse = node->traverse | TRAV_NODE_DONE;
-		return node;
-	}
-	else if(!is_left_traversed(node))
-	{
-		node->traverse = node->traverse | TRAV_LEFT_DONE;
-		return node->left;
-	}
-	else if(!is_right_traversed(node))
-	{
-		node->traverse = node->traverse | TRAV_RIGHT_DONE;
-		return node->right;
-	}
-}
-
-struct graph_node * post_order_traversal(struct graph_node * node)
-{
-	
-	if(is_node_done(node))
-	{
-		node->traverse_graph = 0;
-		return node->parent;
-	}
-	else if(!is_left_traversed(node))
-	{
-		node->traverse = node->traverse | TRAV_LEFT_DONE;
-		return node->left;
-	}
-	else if(!is_right_traversed(node))
-	{
-		node->traverse = node->traverse | TRAV_RIGHT_DONE;
-		return node->right;
-	}
-	else if(!is_node_traversed(node))
-	{
-		node->traverse = node->traverse | TRAV_NODE_DONE;
-		return node;
-	}
-}
-
-struct graph_node * traverse_graph(struct graph_node * node, int mode)
-{
-	if(mode == GRAPH_IN_ORDER)
-	{
-		return in_order_traversal(node);
-	}
-	else if(mode == GRAPH_PRE_ORDER)
-	{
-		return pre_order_traversal(node);
-	}
-	else if(mode == GRAPH_POST_ORDER)
-	{
-		return post_order_traversal(node);
-	}
-	
-	return NULL;
-}
-
-void delete_graph(struct graph_node * root)
-{
-	return;
+	TEST_show_all_nodes(node->left);
+	pr_info("Int value : %d\n", node->int_value);
+	TEST_show_all_nodes(node->right);
 }
 
 //// ENDING
@@ -376,7 +306,7 @@ static void init_process_entry(struct process_entry * entry_ptr){
 static void clean_process_entry(struct process_entry * entry_ptr){
 	if(entry_ptr == NULL) return;
 
-	delete_graph(entry_ptr->graph);
+	//delete_graph(entry_ptr->graph);
 	
 	return;
 }
@@ -518,6 +448,9 @@ static void clean_process_list(void){
 
 static __init int init_module_assign(void)
 {
+	int32_t temp;
+	struct graph_node * root;
+
 	pr_info("Creating Process : temp_proccess_entry\n");
 	
 	process_list_lock = (struct semaphore *) vmalloc(sizeof(struct semaphore));
@@ -529,6 +462,34 @@ static __init int init_module_assign(void)
 	process_entry = proc_create("temp_process_entry", 0777, NULL, &process_operations);
 	
 	pr_info("Process Created\n");	
+
+	temp = 10;
+	root = create_root_node(&temp, DATA_TYPE_INT);
+
+	pr_info("Root Created\n");
+	
+	// @TESTING: add_node function
+	
+	temp = 5;
+	add_node(root, &temp, DATA_TYPE_INT);
+
+	temp = 6;
+	add_node(root, &temp, DATA_TYPE_INT);
+	
+	temp = 7;
+	add_node(root, &temp, DATA_TYPE_INT);
+	
+	temp = 8;
+	add_node(root, &temp, DATA_TYPE_INT);
+	
+	// @TESTING: displaying the tree
+	
+	TEST_show_all_nodes(root);
+
+
+	// @TESTING: trversal mechanics
+	
+
 	return 0;
 }
 
