@@ -1,5 +1,6 @@
 // TODO :
-// 	Remove the unnecessary printing statements and check more for the locking sitaation
+//	Get the get_graph_info working and add the read/write/ioctl interfaces
+//	for the program
 //	@nitesh-meena
 
 // Following macro makes each pr_info statement has a prifix of module name 
@@ -22,8 +23,8 @@ MODULE_LICENSE("GPL");
 
 #define PB2_SET_TYPE 	 _IOW(0x10, 0x31, int32_t*)
 #define PB2_SET_ORDER 	 _IOW(0x10, 0x32, int32_t*)
-#define PB2_SET_INFO 	 _IOW(0x10, 0x33, int32_t*)
-#define PB2_SET_OBJ	 _IOW(0x10, 0x34, int32_t*)
+#define PB2_GET_INFO 	 _IOW(0x10, 0x33, int32_t*)
+#define PB2_GET_OBJ	 _IOW(0x10, 0x34, int32_t*)
 
 #define DATA_TYPE_NONE	 0x00
 #define DATA_TYPE_INT	 0xff
@@ -36,6 +37,10 @@ MODULE_LICENSE("GPL");
 #define TRAV_LEFT_DONE 	 0x02
 #define TRAV_RIGHT_DONE  0x04
 #define TRAV_NODE_DONE	 0x08
+
+#define PROCESS_WRITE_STATE 0x01
+#define PROCESS_IOCTL_STATE 0x02
+#define PROCESS_READ_STATE  0x03
 
 struct obj_info{
 	int32_t deg1cnt;
@@ -247,7 +252,6 @@ struct graph_node * search_graph(struct graph_node * root, void * buffer)
 	return NULL;
 }
 
-
 // The following is the group of functions used for traversal 
 // through the graph
 // 	- nitesh
@@ -256,14 +260,17 @@ struct graph_node * search_graph(struct graph_node * root, void * buffer)
 // 	test the traversal order using inmodule function calls
 // 	- nitesh
 
-void TEST_show_all_nodes(struct graph_node * node)
+void TEST_show_all_nodes(struct graph_node * node, int space )
 {
+	int i= 0 ;
 	if(node == NULL)
 		return;
 
-	TEST_show_all_nodes(node->left);
-	pr_info("Int value : %d\n", node->int_value);
-	TEST_show_all_nodes(node->right);
+	TEST_show_all_nodes(node->left, space + 1);
+	printk(KERN_INFO "\t");
+	for(i =0 ; i < space;  i++) printk(KERN_CONT " ");
+	printk(KERN_CONT "%d\n", node->int_value);
+	TEST_show_all_nodes(node->right, space + 1);
 }
 
 void reset_traversal(struct graph_node * node)
@@ -276,7 +283,6 @@ void reset_traversal(struct graph_node * node)
 	reset_traversal(node->right);
 }
 
-// TODO: make it work for all the implementatios
 struct graph_node * get_next_node(struct graph_node * node, int mode)
 {
 	if(mode == GRAPH_IN_ORDER)
@@ -287,7 +293,6 @@ struct graph_node * get_next_node(struct graph_node * node, int mode)
 		{
 			node->travers |= TRAV_LEFT_DONE;
 			if(node->left) return get_next_node(node->left, mode);
-			pr_info("calling itself (left) for %d\n", node->int_value);
 			return get_next_node(node, mode);
 		}
 	
@@ -301,7 +306,6 @@ struct graph_node * get_next_node(struct graph_node * node, int mode)
 		{
 			node->travers |= TRAV_RIGHT_DONE;
 			if(node->right) return get_next_node(node->right, mode);
-			pr_info("calling itself (right) for %d\n", node->int_value);
 			return get_next_node(node, mode);
 		}
 	
@@ -321,7 +325,6 @@ struct graph_node * get_next_node(struct graph_node * node, int mode)
 		{
 			node->travers |= TRAV_LEFT_DONE;
 			if(node->left) return get_next_node(node->left, mode);
-			pr_info("calling itself (left) for %d\n", node->int_value);
 			return get_next_node(node, mode);
 		}
 	
@@ -329,7 +332,6 @@ struct graph_node * get_next_node(struct graph_node * node, int mode)
 		{
 			node->travers |= TRAV_RIGHT_DONE;
 			if(node->right) return get_next_node(node->right, mode);
-			pr_info("calling itself (right) for %d\n", node->int_value);
 			return get_next_node(node, mode);
 		}
 		
@@ -362,7 +364,6 @@ struct graph_node * get_next_node(struct graph_node * node, int mode)
 		{
 			node->travers |= TRAV_LEFT_DONE;
 			if(node->left) return get_next_node(node->left, mode);
-			pr_info("calling itself (left) for %d\n", node->int_value);
 			return get_next_node(node, mode);
 		}
 	
@@ -370,7 +371,6 @@ struct graph_node * get_next_node(struct graph_node * node, int mode)
 		{
 			node->travers |= TRAV_RIGHT_DONE;
 			if(node->right) return get_next_node(node->right, mode);
-			pr_info("calling itself (right) for %d\n", node->int_value);
 			return get_next_node(node, mode);
 		}
 		
@@ -385,6 +385,81 @@ struct graph_node * get_next_node(struct graph_node * node, int mode)
 	
 	return NULL;
 }
+// Function for deleteing the graph
+void delete_graph(struct graph_node * root)
+{
+	if(root == NULL) return;
+
+	delete_graph(root->left);
+	delete_graph(root->right);
+	
+	root->left = NULL;
+	root->right = NULL;	
+
+	vfree(root);
+}
+
+// Functions used for getting information regarding the BST in the LKM
+// 
+void traverse_with_update(struct graph_node * node, int * maxdepth, int * mindepth, int * deg1, int * deg2, int * deg3, int depth)
+{
+	int nullcount = 0;
+	if(node == NULL) return;
+
+	traverse_with_update(node->left, maxdepth, mindepth, deg1, deg2, deg3, depth+1);
+
+	if(node->parent == NULL) nullcount++;
+	if(node->left == NULL) nullcount++;
+	if(node->right == NULL) nullcount++;
+
+	if(nullcount == 1) 	*deg1 += 1;
+	else if(nullcount == 2) *deg2 += 1;
+	else if(nullcount == 3) *deg3 += 1;
+
+	if(node->left == NULL && node->right == NULL)
+	{
+		pr_info("reached leaf node with value %d\n", node->int_value);
+		if(depth > *maxdepth)
+		{
+			*maxdepth = depth;
+		}
+		
+		if(depth < *mindepth)
+		{
+			*mindepth = depth;
+		}
+	}
+
+
+	traverse_with_update(node->right, maxdepth, mindepth, deg1, deg2, deg3, depth+1);
+}
+
+
+struct obj_info * get_graph_info(struct graph_node * root)
+{
+	struct obj_info * infoptr = NULL;
+
+	int maxdepth = 0;
+	int mindepth = INT_MAX;
+
+	int deg1 = 0;
+	int deg2 = 0;
+	int deg3 = 0;
+
+	traverse_with_update(root, &maxdepth, &mindepth, &deg1, &deg2, &deg3, 0);
+
+	infoptr = (struct obj_info *) vmalloc(sizeof(struct obj_info));
+
+	infoptr->maxdepth = maxdepth;
+	infoptr->mindepth = mindepth;
+
+	infoptr->deg1cnt = deg1;
+	infoptr->deg2cnt = deg2;
+	infoptr->deg3cnt = deg3;
+
+	return infoptr;
+}
+
 
 //// ENDING
 
@@ -394,12 +469,12 @@ struct process_entry{
 	
 	int pid;
 	
-	int size;
-
-	int write_count;
 	int read_count;
 
-	int type;
+	char type;
+	int order;
+
+	int state;
 	
 	struct graph_node * graph;
 	
@@ -411,9 +486,9 @@ static void init_process_entry(struct process_entry * entry_ptr){
 		return;
 
 	entry_ptr->graph 		= NULL;	
+	entry_ptr->order		= GRAPH_IN_ORDER;
+	entry_ptr->state		= 0;
 	
-	entry_ptr->size 		= 0;
-	entry_ptr->write_count 		= 0;
 	entry_ptr->read_count 		= 0;
 	
 	entry_ptr->type 		= DATA_TYPE_NONE;
@@ -425,7 +500,7 @@ static void init_process_entry(struct process_entry * entry_ptr){
 static void clean_process_entry(struct process_entry * entry_ptr){
 	if(entry_ptr == NULL) return;
 
-	//delete_graph(entry_ptr->graph);
+	delete_graph(entry_ptr->graph);
 	
 	return;
 }
@@ -522,8 +597,113 @@ static ssize_t process_read_handler(struct file * fptr,
 				    size_t size, 
 				    loff_t * ppos)
 {
+	struct process_entry * entry_ptr = NULL;
+
+	entry_ptr = get_process_entry(current->pid);
+
+	if(process_entry == NULL)
+	{
+		// RETURN ERROR
+		return -EBADF;
+	}
+	
+	// reading from process which has not set the type	
+	else if(process_entry->type == DATA_TYPE_NONE)
+	{
+		return -EACCES;
+	}
+
+
+	// READING THE FILE HANDLER CODE 
+
+
+
 	
 	return 0; 
+}
+/*
+struct process_entry{
+	
+	int pid;
+	
+	int read_count;
+
+	int type;
+	
+	struct graph_node * graph;
+	
+	struct list_head node;
+};
+*/
+
+static ssize_t process_ioctl_handler(struct inode * iptr, 
+				     struct file * fptr, 
+				     unsigned int flag, 
+				     unsigned long arg)
+{
+	struct process_entry * entry_ptr = NULL;
+	char chdata= 0;
+	int ret = 0;
+
+	entry_ptr = get_process_entry(current->pid);
+	if(entry_ptr == NULL)
+	{
+		return -EBADF;
+	}
+
+	entry_ptr->state = PROCESS_IOCTL_STATE;
+	
+	switch(flag)
+	{
+	case PB2_SET_TYPE:
+	{
+		ret = get_user(chdata, (char *)args);
+		if(ret) return -EINVAL;
+
+		if(chdata!= DATA_TYPE_STRING && chdata != DATA_TYPE_INT) return -EINVAL;
+
+		entry_ptr->type = chdata;
+
+		return 0;
+	}
+	break;
+	case PB2_SET_ORDER:
+	{
+		if(entry_ptr->type == DATA_TYPE_NONE) return -EACCES;
+
+		ret = get_user(chdata, (char *)arg);
+		if(ret) return -EINVAL;
+		
+		if(chdata != GRAPH_IN_ORDER && chdata != GRAPH_POST_ORDER && chdata != GRAPH_PRE_ORDER) return -EINVAL;
+		
+		entry_ptr->order = chdata;
+		
+		reset_traversal(entry_ptr->graph);
+
+		return 0;
+	}
+	break;
+	case PB2_GET_INFO:
+	{
+		// IMPLEMENT: @RahulKrantiKiran please implement 
+		// get_info and get_obj routines for the function
+
+		return 0;
+	}
+	break;
+	case PB2_SET_OBJ:
+	{
+		// IMPLEMENT: @RahulKrantiKiran please implement 
+		// get_info and get_obj routines for the function 
+		
+		return 0;
+	}
+	break;
+	default:
+	{
+		return -EINVAL;
+	}
+	}
 }
 
 static ssize_t process_write_handler(struct file * fptr, 
@@ -531,7 +711,34 @@ static ssize_t process_write_handler(struct file * fptr,
 				     size_t size, 
 				     loff_t * ppos)
 {
-	return size;
+	struct process_entry * entry_ptr = NULL;
+	int32_t int_value = 0 ;
+
+	entry_ptr = get_process_entry(current->pid);
+
+	if(entry_ptr == NULL)
+	{
+		return -EBADF;
+	}
+	
+	else if(entry_ptr->type == DATA_TYPE_NONE)
+	{
+		return -EACCES;
+	}	
+	
+	entry_ptr->state = PROCESS_WRITE_HANDLER;
+
+	if(entry_ptr->graph == NULL)
+	{
+		entry_ptr->graph = create_root_node(buffer, entry_ptr->type);
+	}
+	else
+	{
+		add_node(entry_ptr->graph, buffer, entry_ptr->type);
+	}
+
+	if(entry_ptr->type == DATA_TYPE_STRING) return strlen(buffer);
+	if(entry_ptr->type == DATA_TYPE_INT) return sizeof(int32_t);
 } 
 
 static struct file_operations process_operations = 
@@ -570,7 +777,7 @@ static __init int init_module_assign(void)
 	int32_t temp;
 	struct graph_node * root;
 	struct graph_node * node;
-
+	struct obj_info * ptr ;
 	pr_info("Creating Process : temp_proccess_entry\n");
 	
 	process_list_lock = (struct semaphore *) vmalloc(sizeof(struct semaphore));
@@ -602,9 +809,11 @@ static __init int init_module_assign(void)
 	temp = 8;
 	add_node(root, &temp, DATA_TYPE_INT);
 	
+	temp = 11; 
+	add_node(root, &temp, DATA_TYPE_INT);
 	// @TESTING: displaying the tree
 	
-	TEST_show_all_nodes(root);
+	TEST_show_all_nodes(root, 0);
 
 
 	// @TESTING: trversal mechanics
@@ -624,6 +833,27 @@ static __init int init_module_assign(void)
 			pr_info("getting value %d\n", node->int_value);
 		}
 	}
+
+	// @TESTING: testinvg delete functionality using inmodule calls
+	//
+	
+	delete_graph(root);
+	
+
+	// @TESTING: testing get obj info functionality using inmodule calls
+	//
+	
+	ptr = get_graph_info(root);
+
+	pr_info("GRAPH INFO\n");
+	pr_info("degree 1: %d\n", ptr->deg1cnt);
+	pr_info("degree 2: %d\n", ptr->deg2cnt);
+	pr_info("degree 3: %d\n", ptr->deg3cnt);
+
+	pr_info("\n");
+	pr_info("maxdepth: %d\n", ptr->maxdepth);
+	pr_info("mindepth: %d\n", ptr->mindepth);
+
 	return 0;
 }
 
