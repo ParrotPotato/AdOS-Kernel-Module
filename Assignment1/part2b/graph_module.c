@@ -19,6 +19,8 @@
 #include <linux/semaphore.h>
 #include <linux/string.h>
 
+#include <asm/uaccess.h>
+
 MODULE_LICENSE("GPL");
 
 #define PB2_SET_TYPE 	 _IOW(0x10, 0x31, int32_t*)
@@ -408,9 +410,9 @@ void traverse_with_update(struct graph_node * node, int * maxdepth, int * mindep
 
 	traverse_with_update(node->left, maxdepth, mindepth, deg1, deg2, deg3, depth+1);
 
-	if(node->parent == NULL) nullcount++;
-	if(node->left == NULL) nullcount++;
-	if(node->right == NULL) nullcount++;
+	if(node->parent != NULL) nullcount++;
+	if(node->left != NULL) nullcount++;
+	if(node->right != NULL) nullcount++;
 
 	if(nullcount == 1) 	*deg1 += 1;
 	else if(nullcount == 2) *deg2 += 1;
@@ -449,7 +451,7 @@ struct obj_info * get_graph_info(struct graph_node * root)
 	traverse_with_update(root, &maxdepth, &mindepth, &deg1, &deg2, &deg3, 0);
 
 	infoptr = (struct obj_info *) vmalloc(sizeof(struct obj_info));
-
+	pr_info("%d %d %d %d %d\n",maxdepth, mindepth , deg1, deg2, deg3);
 	infoptr->maxdepth = maxdepth;
 	infoptr->mindepth = mindepth;
 
@@ -477,6 +479,7 @@ struct process_entry{
 	int state;
 	
 	struct graph_node * graph;
+	struct graph_node * current_node;
 	
 	struct list_head node;
 };
@@ -598,27 +601,42 @@ static ssize_t process_read_handler(struct file * fptr,
 				    loff_t * ppos)
 {
 	struct process_entry * entry_ptr = NULL;
-
+	
 	entry_ptr = get_process_entry(current->pid);
 
-	if(process_entry == NULL)
+	if(entry_ptr == NULL)
 	{
-		// RETURN ERROR
 		return -EBADF;
 	}
 	
 	// reading from process which has not set the type	
-	else if(process_entry->type == DATA_TYPE_NONE)
+	else if(entry_ptr->type == DATA_TYPE_NONE)
 	{
 		return -EACCES;
 	}
 
-
-	// READING THE FILE HANDLER CODE 
-
-
-
 	
+	if(entry_ptr->state != PROCESS_READ_STATE)
+	{
+		reset_traversal(entry_ptr->graph);
+		entry_ptr->current_node = entry_ptr->graph;
+	}
+
+	entry_ptr->current_node = get_next_node(entry_ptr->current_node, entry_ptr->order);
+
+	if(entry_ptr->current_node == NULL) return 0;
+
+	if(entry_ptr->type == DATA_TYPE_STRING)
+	{
+		memcpy(buffer, entry_ptr->current_node->str, entry_ptr->current_node->len);
+		return entry_ptr->current_node->len;
+	}
+	else if(entry_ptr->type == DATA_TYPE_INT)
+	{
+		memcpy(buffer, &entry_ptr->current_node->int_value, sizeof(int32_t));
+		return sizeof(int32_t);
+	}
+
 	return 0; 
 }
 /*
@@ -636,10 +654,9 @@ struct process_entry{
 };
 */
 
-static ssize_t process_ioctl_handler(struct inode * iptr, 
-				     struct file * fptr, 
-				     unsigned int flag, 
-				     unsigned long arg)
+static long process_ioctl_handler(struct file * fptr, 
+				  unsigned int flag, 
+				  unsigned long arg)
 {
 	struct process_entry * entry_ptr = NULL;
 	char chdata= 0;
@@ -657,7 +674,7 @@ static ssize_t process_ioctl_handler(struct inode * iptr,
 	{
 	case PB2_SET_TYPE:
 	{
-		ret = get_user(chdata, (char *)args);
+		ret = get_user(chdata, (char *)arg);
 		if(ret) return -EINVAL;
 
 		if(chdata!= DATA_TYPE_STRING && chdata != DATA_TYPE_INT) return -EINVAL;
@@ -691,7 +708,7 @@ static ssize_t process_ioctl_handler(struct inode * iptr,
 		return 0;
 	}
 	break;
-	case PB2_SET_OBJ:
+	case PB2_GET_OBJ:
 	{
 		// IMPLEMENT: @RahulKrantiKiran please implement 
 		// get_info and get_obj routines for the function 
@@ -712,7 +729,6 @@ static ssize_t process_write_handler(struct file * fptr,
 				     loff_t * ppos)
 {
 	struct process_entry * entry_ptr = NULL;
-	int32_t int_value = 0 ;
 
 	entry_ptr = get_process_entry(current->pid);
 
@@ -726,19 +742,21 @@ static ssize_t process_write_handler(struct file * fptr,
 		return -EACCES;
 	}	
 	
-	entry_ptr->state = PROCESS_WRITE_HANDLER;
+	entry_ptr->state = PROCESS_WRITE_STATE;
 
 	if(entry_ptr->graph == NULL)
 	{
-		entry_ptr->graph = create_root_node(buffer, entry_ptr->type);
+		entry_ptr->graph = create_root_node((void *)buffer, entry_ptr->type);
 	}
 	else
 	{
-		add_node(entry_ptr->graph, buffer, entry_ptr->type);
+		add_node(entry_ptr->graph, (void *)buffer, entry_ptr->type);
 	}
 
 	if(entry_ptr->type == DATA_TYPE_STRING) return strlen(buffer);
 	if(entry_ptr->type == DATA_TYPE_INT) return sizeof(int32_t);
+
+	return 0;
 } 
 
 static struct file_operations process_operations = 
@@ -746,6 +764,7 @@ static struct file_operations process_operations =
 	.owner 	= THIS_MODULE,
 	.open	= process_open_handler,
 	.read	= process_read_handler,
+	.unlocked_ioctl	= process_ioctl_handler,
 	.write	= process_write_handler,
 	.release= process_close_handler,
 };
