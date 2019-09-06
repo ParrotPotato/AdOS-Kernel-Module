@@ -407,12 +407,17 @@ void traverse_with_update(struct graph_node * node, int * maxdepth, int * mindep
 {
 	int nullcount = 0;
 	if(node == NULL) return;
-
 	traverse_with_update(node->left, maxdepth, mindepth, deg1, deg2, deg3, depth+1);
 
-	if(node->parent != NULL) nullcount++;
-	if(node->left != NULL) nullcount++;
-	if(node->right != NULL) nullcount++;
+	if(node->parent != NULL){
+	       	nullcount++;
+	}
+	if(node->left != NULL) { 
+                nullcount++;
+        }
+	if(node->right != NULL) { 
+                nullcount++;
+        }
 
 	if(nullcount == 1) 	*deg1 += 1;
 	else if(nullcount == 2) *deg2 += 1;
@@ -451,7 +456,7 @@ struct obj_info * get_graph_info(struct graph_node * root)
 	traverse_with_update(root, &maxdepth, &mindepth, &deg1, &deg2, &deg3, 0);
 
 	infoptr = (struct obj_info *) vmalloc(sizeof(struct obj_info));
-	pr_info("%d %d %d %d %d\n",maxdepth, mindepth , deg1, deg2, deg3);
+//	pr_info("%d %d %d %d %d\n",maxdepth, mindepth , deg1, deg2, deg3);
 	infoptr->maxdepth = maxdepth;
 	infoptr->mindepth = mindepth;
 
@@ -856,7 +861,7 @@ static __init int init_module_assign(void)
 	// @TESTING: testinvg delete functionality using inmodule calls
 	//
 	
-	delete_graph(root);
+	//delete_graph(root);
 	
 
 	// @TESTING: testing get obj info functionality using inmodule calls

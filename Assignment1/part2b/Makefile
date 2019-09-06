@@ -5,3 +5,7 @@ all:
 
 clean:
 	make -C /lib/modules/`uname -r`/build/ M=$(PWD) clean 
+
+insert: all
+	sudo rmmod graph_module
+	sudo insmod graph_module.ko	
