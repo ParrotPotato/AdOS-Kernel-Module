@@ -21,61 +21,9 @@
 
 #include <asm/uaccess.h>
 
+#include "graph_module.h"
+
 MODULE_LICENSE("GPL");
-
-#define PB2_SET_TYPE 	 _IOW(0x10, 0x31, int32_t*)
-#define PB2_SET_ORDER 	 _IOW(0x10, 0x32, int32_t*)
-#define PB2_GET_INFO 	 _IOW(0x10, 0x33, int32_t*)
-#define PB2_GET_OBJ	 _IOW(0x10, 0x34, int32_t*)
-
-#define DATA_TYPE_NONE	 0x00
-#define DATA_TYPE_INT	 0xff
-#define DATA_TYPE_STRING 0xf0
-
-#define GRAPH_IN_ORDER	 0x00
-#define GRAPH_POST_ORDER 0x01
-#define GRAPH_PRE_ORDER	 0x02
-
-#define TRAV_LEFT_DONE 	 0x02
-#define TRAV_RIGHT_DONE  0x04
-#define TRAV_NODE_DONE	 0x08
-
-#define PROCESS_WRITE_STATE 0x01
-#define PROCESS_IOCTL_STATE 0x02
-#define PROCESS_READ_STATE  0x03
-
-struct obj_info{
-	int32_t deg1cnt;
-	int32_t deg2cnt;
-	int32_t deg3cnt;
-
-	int32_t maxdepth;
-	int32_t mindepth;
-};
-
-struct search_obj{
-	char objtype;
-	char found;
-
-	int32_t int_obj;
-	char 	str[100];
-	int32_t len;
-};
-
-struct graph_node{
-	struct graph_node * right;
-	struct graph_node * left;
-	struct graph_node * parent;
-	
-	char type;
-
-	int32_t int_value;
-	char str[100];
-
-	int len;
-
-	int travers;
-};
 
 //// GRAPH RELATED FUNCTIONS 
 
@@ -679,6 +627,7 @@ static long process_ioctl_handler(struct file * fptr,
 	{
 	case PB2_SET_TYPE:
 	{
+		pr_info("process %d -> ioctl setting type", entry_ptr->pid);
 		ret = get_user(chdata, (char *)arg);
 		if(ret) return -EINVAL;
 
@@ -691,6 +640,7 @@ static long process_ioctl_handler(struct file * fptr,
 	break;
 	case PB2_SET_ORDER:
 	{
+		pr_info("process %d -> ioctl setting order", entry_ptr->pid);
 		if(entry_ptr->type == DATA_TYPE_NONE) return -EACCES;
 
 		ret = get_user(chdata, (char *)arg);
@@ -735,6 +685,8 @@ static ssize_t process_write_handler(struct file * fptr,
 {
 	struct process_entry * entry_ptr = NULL;
 
+	pr_info("write_handler being\n");
+
 	entry_ptr = get_process_entry(current->pid);
 
 	if(entry_ptr == NULL)
@@ -752,10 +704,23 @@ static ssize_t process_write_handler(struct file * fptr,
 	if(entry_ptr->graph == NULL)
 	{
 		entry_ptr->graph = create_root_node((void *)buffer, entry_ptr->type);
+		
+	
+		// TESTING
+		{
+			pr_info("added node BST \n");
+			TEST_show_all_nodes(entry_ptr->graph, 0);
+		}
 	}
 	else
 	{
 		add_node(entry_ptr->graph, (void *)buffer, entry_ptr->type);
+
+		// TESTING
+		{
+			pr_info("added node BST \n");
+			TEST_show_all_nodes(entry_ptr->graph, 0);
+		}
 	}
 
 	if(entry_ptr->type == DATA_TYPE_STRING) return strlen(buffer);
@@ -798,10 +763,6 @@ static void clean_process_list(void){
 
 static __init int init_module_assign(void)
 {
-	int32_t temp;
-	struct graph_node * root;
-	struct graph_node * node;
-	struct obj_info * ptr ;
 	pr_info("Creating Process : temp_proccess_entry\n");
 	
 	process_list_lock = (struct semaphore *) vmalloc(sizeof(struct semaphore));
