@@ -19,7 +19,7 @@
 #include <linux/semaphore.h>
 #include <linux/string.h>
 
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include "graph_module.h"
 
@@ -56,7 +56,7 @@ struct graph_node * create_root_node(void * buffer, char type)
 
 
 	node->parent = NULL;
-	node->type = DATA_TYPE_INT;
+	node->type = type;
 
 	node->left = NULL;
 	node->right = NULL;
@@ -133,13 +133,13 @@ void add_node(struct graph_node * root, void * buffer, char type )
 	
 	if((unsigned char)root->type == DATA_TYPE_STRING)
 	{
-		if(strcmp(root->str, (char *)buffer) > 0)
+		if(strcmp((char *)buffer, root->str) < 0)
 		{	
-			add_node(get_right_node(root), buffer, type);
+			add_node(get_left_node(root), buffer, type);
 		}
 		else
 		{
-			add_node(get_left_node(root), buffer, type);
+			add_node(get_right_node(root), buffer, type);
 		} 
 	}
 	else if((unsigned char)root->type == DATA_TYPE_INT)
@@ -563,7 +563,7 @@ static ssize_t process_read_handler(struct file * fptr,
 	}
 	
 	// reading from process which has not set the type	
-	else if(entry_ptr->type == DATA_TYPE_NONE)
+	else if((unsigned char)entry_ptr->type == DATA_TYPE_NONE)
 	{
 		return -EACCES;
 	}
@@ -573,20 +573,25 @@ static ssize_t process_read_handler(struct file * fptr,
 	{
 		reset_traversal(entry_ptr->graph);
 		entry_ptr->current_node = entry_ptr->graph;
+		entry_ptr->state = PROCESS_READ_STATE;
 	}
 
+
 	entry_ptr->current_node = get_next_node(entry_ptr->current_node, entry_ptr->order);
+	
+	pr_info("%p is the current node \n", entry_ptr->current_node);
 
 	if(entry_ptr->current_node == NULL) return 0;
 
-	if(entry_ptr->type == DATA_TYPE_STRING)
+	if((unsigned char)entry_ptr->type == DATA_TYPE_STRING)
 	{
 		memcpy(buffer, entry_ptr->current_node->str, entry_ptr->current_node->len);
 		return entry_ptr->current_node->len;
 	}
-	else if(entry_ptr->type == DATA_TYPE_INT)
+	else if((unsigned char)entry_ptr->type == DATA_TYPE_INT)
 	{
 		memcpy(buffer, &entry_ptr->current_node->int_value, sizeof(int32_t));
+		pr_info("buffer read - %d\n", entry_ptr->current_node->int_value);
 		return sizeof(int32_t);
 	}
 
@@ -630,10 +635,15 @@ static long process_ioctl_handler(struct file * fptr,
 		pr_info("process %d -> ioctl setting type", entry_ptr->pid);
 		ret = get_user(chdata, (char *)arg);
 		if(ret) return -EINVAL;
+	
 
-		if(chdata!= DATA_TYPE_STRING && chdata != DATA_TYPE_INT) return -EINVAL;
+		pr_info("value revieved %p, %d\n", (char *) arg, chdata);
+
+		if((unsigned char)chdata!= DATA_TYPE_STRING && (unsigned char)chdata != DATA_TYPE_INT) return -EINVAL;
 
 		entry_ptr->type = chdata;
+
+		pr_info("assigning %d, %d\n", entry_ptr->type , chdata);
 
 		return 0;
 	}
@@ -646,7 +656,7 @@ static long process_ioctl_handler(struct file * fptr,
 		ret = get_user(chdata, (char *)arg);
 		if(ret) return -EINVAL;
 		
-		if(chdata != GRAPH_IN_ORDER && chdata != GRAPH_POST_ORDER && chdata != GRAPH_PRE_ORDER) return -EINVAL;
+		if((unsigned char)chdata != GRAPH_IN_ORDER && (unsigned char)chdata != GRAPH_POST_ORDER && (unsigned char)chdata != GRAPH_PRE_ORDER) return -EINVAL;
 		
 		entry_ptr->order = chdata;
 		
@@ -696,6 +706,8 @@ static ssize_t process_write_handler(struct file * fptr,
 	
 	else if(entry_ptr->type == DATA_TYPE_NONE)
 	{
+		pr_info("data type is none\n");
+		
 		return -EACCES;
 	}	
 	
@@ -706,21 +718,11 @@ static ssize_t process_write_handler(struct file * fptr,
 		entry_ptr->graph = create_root_node((void *)buffer, entry_ptr->type);
 		
 	
-		// TESTING
-		{
-			pr_info("added node BST \n");
-			TEST_show_all_nodes(entry_ptr->graph, 0);
-		}
 	}
 	else
 	{
 		add_node(entry_ptr->graph, (void *)buffer, entry_ptr->type);
 
-		// TESTING
-		{
-			pr_info("added node BST \n");
-			TEST_show_all_nodes(entry_ptr->graph, 0);
-		}
 	}
 
 	if(entry_ptr->type == DATA_TYPE_STRING) return strlen(buffer);
@@ -763,6 +765,7 @@ static void clean_process_list(void){
 
 static __init int init_module_assign(void)
 {
+	
 	pr_info("Creating Process : temp_proccess_entry\n");
 	
 	process_list_lock = (struct semaphore *) vmalloc(sizeof(struct semaphore));
@@ -774,70 +777,6 @@ static __init int init_module_assign(void)
 	process_entry = proc_create("temp_process_entry", 0777, NULL, &process_operations);
 	
 	pr_info("Process Created\n");	
-
-	temp = 10;
-	root = create_root_node(&temp, DATA_TYPE_INT);
-
-	pr_info("Root Created\n");
-	
-	// @TESTING: add_node function
-	
-	temp = 5;
-	add_node(root, &temp, DATA_TYPE_INT);
-	
-	temp = 6;
-	add_node(root, &temp, DATA_TYPE_INT);
-	
-	temp = 7;
-	add_node(root, &temp, DATA_TYPE_INT);
-	
-	temp = 8;
-	add_node(root, &temp, DATA_TYPE_INT);
-	
-	temp = 11; 
-	add_node(root, &temp, DATA_TYPE_INT);
-	// @TESTING: displaying the tree
-	
-	TEST_show_all_nodes(root, 0);
-
-
-	// @TESTING: trversal mechanics
-
-	pr_info("Testing traversal\n");
-
-	node = root;
-
-	reset_traversal(node);
-
-
-	while(node != NULL){
-		
-		node = get_next_node(node, GRAPH_PRE_ORDER);
-		if(node)
-		{
-			pr_info("getting value %d\n", node->int_value);
-		}
-	}
-
-	// @TESTING: testinvg delete functionality using inmodule calls
-	//
-	
-	//delete_graph(root);
-	
-
-	// @TESTING: testing get obj info functionality using inmodule calls
-	//
-	
-	ptr = get_graph_info(root);
-
-	pr_info("GRAPH INFO\n");
-	pr_info("degree 1: %d\n", ptr->deg1cnt);
-	pr_info("degree 2: %d\n", ptr->deg2cnt);
-	pr_info("degree 3: %d\n", ptr->deg3cnt);
-
-	pr_info("\n");
-	pr_info("maxdepth: %d\n", ptr->maxdepth);
-	pr_info("mindepth: %d\n", ptr->mindepth);
 
 	return 0;
 }
