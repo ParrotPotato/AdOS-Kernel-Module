@@ -1,4 +1,5 @@
-// TODO :
+// TODO 
+//
 //	Get the get_graph_info working and add the read/write/ioctl interfaces
 //	for the program
 //	@nitesh-meena
@@ -19,6 +20,7 @@
 #include <linux/semaphore.h>
 #include <linux/string.h>
 
+#include <asm/uaccess.h>
 #include <linux/uaccess.h>
 
 #include "graph_module.h"
@@ -619,7 +621,7 @@ static long process_ioctl_handler(struct file * fptr,
 	struct process_entry * entry_ptr = NULL;
 	char chdata= 0;
 	int ret = 0;
-
+	struct obj_info* info;
 	entry_ptr = get_process_entry(current->pid);
 	if(entry_ptr == NULL)
 	{
@@ -669,15 +671,25 @@ static long process_ioctl_handler(struct file * fptr,
 	{
 		// IMPLEMENT: @RahulKrantiKiran please implement 
 		// get_info and get_obj routines for the function
-
-		return 0;
+		pr_info("process %d -> ioctl getting info",entry_ptr->pid );
+		info = get_graph_info(entry_ptr->graph);
+		pr_info("%d %d %d %d %d\n",info->deg1cnt, info->deg2cnt, info->deg3cnt, info->mindepth, info->maxdepth);
+		ret = copy_to_user( (struct obj_info*)arg, info, sizeof(struct obj_info));
+		pr_info("The copy to user value is %d\n",ret);
+		
+		if(ret == 0)
+			return 0;
+		else
+			return ret;
 	}
 	break;
 	case PB2_GET_OBJ:
 	{
 		// IMPLEMENT: @RahulKrantiKiran please implement 
 		// get_info and get_obj routines for the function 
+		pr_info("process %d -> ioctl search object", entry_ptr->pid);
 		
+				
 		return 0;
 	}
 	break;
@@ -777,7 +789,6 @@ static __init int init_module_assign(void)
 	process_entry = proc_create("temp_process_entry", 0777, NULL, &process_operations);
 	
 	pr_info("Process Created\n");	
-
 	return 0;
 }
 

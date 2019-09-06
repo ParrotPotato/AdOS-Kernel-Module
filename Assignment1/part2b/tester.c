@@ -43,6 +43,8 @@ int main()
 	ret = ioctl(fd, PB2_SET_ORDER, &input);
 	if(ret < 0) perror("ioctl failed\n");
 	printf("writing");
+	struct obj_info infomation;
+
 	while(len)
 	{
 		number = rand() % 1000;
@@ -67,6 +69,10 @@ int main()
 
 		len++;
 	}
+
+	ioctl(fd, PB2_GET_INFO, &infomation);
+
+	printf("\nThe info received %d %d %d %d %d\n",infomation.deg1cnt, infomation.deg2cnt,infomation.deg3cnt,infomation.maxdepth,infomation.mindepth);
 
 	printf("\n");
 	close(fd);	
