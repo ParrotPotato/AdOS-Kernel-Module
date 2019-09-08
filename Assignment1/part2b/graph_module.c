@@ -691,7 +691,7 @@ static long process_ioctl_handler(struct file * fptr,
 		if(ret == 0)
 			return 0;
 		else
-			return ret;
+			return -EINVAL;
 	}
 	break;
 	case PB2_GET_OBJ:
@@ -700,17 +700,21 @@ static long process_ioctl_handler(struct file * fptr,
 		pr_info("process %d -> ioctl search object", entry_ptr->pid);
 		
 		ret = copy_from_user(&objptr, (struct obj_info *) arg,  sizeof(struct search_obj));
-
-		if(!ret)
+		
+		pr_info("Searching %s Sixze is %d and ret is %d\n",objptr.str, (int)sizeof(struct search_obj), ret);
+		if(ret)
 		{
+			pr_info("Returning EINVAL\n");
 			return -EINVAL;
 		}
 		
 		if((unsigned char) objptr.objtype == DATA_TYPE_INT) node = search_graph(entry_ptr->graph, &objptr.int_obj);
 		else node = search_graph(entry_ptr->graph, objptr.str);
-
+		
+		pr_info("The valus is %s\n",node->str);
 		if(node == NULL) 
 		{
+			pr_info("Not found\n");
 			objptr.found = 1;
 			objptr.len = -1;
 			ret = copy_to_user((struct obj_info *) arg, &objptr, sizeof(struct obj_info ));
@@ -721,13 +725,15 @@ static long process_ioctl_handler(struct file * fptr,
 
 		if(entry_ptr->type == DATA_TYPE_STRING)
 		{
-			//objptr->len = strlen(node->str);
+			objptr.len = strlen(node->str);
 		}
 
 		ret = copy_to_user((struct obj_info *) arg, &objptr, sizeof(struct obj_info ));
 		
-		if(!ret)
+		if(ret)
 		{
+			pr_info("get EINVAL while returning\n");
+
 			return -EINVAL;
 		}
 					

@@ -74,19 +74,8 @@ int main()
 
 		len++;
 	}
-	struct search_obj value;
-	value.found = 1;
-	value.int_obj= 88;
+	printf("\n");
 
-	value.objtype = DATA_TYPE_INT;
-	
-	ioctl(fd, PB2_GET_OBJ, &value);
-
-	if(value.found == 0)
-	{
-		printf("Search working\n");
-	}
-	else printf("not workingn\n");
 	
 	ioctl(fd, PB2_GET_INFO, &infomation);
 // TODO : Check the value of information revieced from the output 
@@ -149,6 +138,19 @@ int main()
 
 		memset(tempbuffer, 0, sizeof(char) * 100);
 	}
+
+	struct search_obj value;
+        value.found = 1;
+        value.int_obj= -1;
+	strcpy(value.str,"awesome");
+        value.objtype = DATA_TYPE_STRING;
+	ioctl(fd, PB2_GET_OBJ, &value);
+
+	if(value.found == 0)
+        {
+                printf("Search working\n");
+        }
+        else printf("not workingn\n");
 
 	printf("\n");
 	return 0;

@@ -15,3 +15,7 @@ update: all
 
 remove:
 	sudo rmmod graph_module
+
+test: 
+	gcc  tester.c -o tester
+	./tester
