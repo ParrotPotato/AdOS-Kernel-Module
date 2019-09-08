@@ -28,7 +28,7 @@ int main()
 		return -1;
 	}
 
-	int len = 10;
+	int len = 0;
 	int ret = 0;
 	
 	printf("setting order and type for ioctl interface\n");
@@ -44,10 +44,14 @@ int main()
 	if(ret < 0) perror("ioctl failed\n");
 	printf("writing");
 	struct obj_info infomation;
+		
 
-	while(len)
+	int arr[] = {12, 55, 88, 19, 64, 12, 100, 67, 72, 39};
+
+
+	while(len < 10)
 	{
-		number = rand() % 1000;
+		number = arr[len]; 
 		
 		printf(" %d", number);
 		ret = write(fd, &number, sizeof(int32_t));
@@ -57,9 +61,10 @@ int main()
 			perror("write failed\n");
 		}
 		
-		len--;
+		len++;
 	}
 	printf("\n");
+	len = 0 ;
 	while(len < 10)
 	{
 		ret = read(fd, &number, sizeof(int32_t));
@@ -69,9 +74,22 @@ int main()
 
 		len++;
 	}
+	struct search_obj value;
+	value.found = 1;
+	value.int_obj= 88;
 
+	value.objtype = DATA_TYPE_INT;
+	
+	ioctl(fd, PB2_GET_OBJ, &value);
+
+	if(value.found == 0)
+	{
+		printf("Search working\n");
+	}
+	else printf("not workingn\n");
+	
 	ioctl(fd, PB2_GET_INFO, &infomation);
-
+// TODO : Check the value of information revieced from the output 
 	printf("\nThe info received %d %d %d %d %d\n",infomation.deg1cnt, infomation.deg2cnt,infomation.deg3cnt,infomation.maxdepth,infomation.mindepth);
 
 	printf("\n");

@@ -183,20 +183,17 @@ struct graph_node * search_graph(struct graph_node * root, void * buffer)
 		}
 		else if((unsigned char)type == DATA_TYPE_STRING)
 		{
-			if((unsigned char)type == DATA_TYPE_INT)
+			if(strcmp(current_node->str, (char *) buffer) == 0)
 			{
-				if(strcmp(current_node->str, (char *) buffer) == 0)
-				{
-					return current_node;
-				}
-				else if(strcmp(current_node->str, (char *) buffer ) > 0)
-				{
-					current_node = current_node->left;
-				}
-				else
-				{
-					current_node = current_node->right;
-				}
+				return current_node;
+			}
+			else if(strcmp(current_node->str, (char *) buffer ) > 0)
+			{
+				current_node = current_node->left;
+			}
+			else
+			{
+				current_node = current_node->right;
 			}
 		}	
 	}
@@ -576,6 +573,9 @@ static ssize_t process_read_handler(struct file * fptr,
 		reset_traversal(entry_ptr->graph);
 		entry_ptr->current_node = entry_ptr->graph;
 		entry_ptr->state = PROCESS_READ_STATE;
+
+
+		TEST_show_all_nodes(entry_ptr->graph, 0);
 	}
 
 
@@ -621,7 +621,10 @@ static long process_ioctl_handler(struct file * fptr,
 	struct process_entry * entry_ptr = NULL;
 	char chdata= 0;
 	int ret = 0;
-	struct obj_info* info;
+	struct obj_info * info = NULL;
+	struct search_obj objptr ;
+	struct graph_node * node = NULL;
+
 	entry_ptr = get_process_entry(current->pid);
 	if(entry_ptr == NULL)
 	{
@@ -670,11 +673,19 @@ static long process_ioctl_handler(struct file * fptr,
 	case PB2_GET_INFO:
 	{
 		// IMPLEMENT: @RahulKrantiKiran please implement 
-		// get_info and get_obj routines for the function
 		pr_info("process %d -> ioctl getting info",entry_ptr->pid );
+		
 		info = get_graph_info(entry_ptr->graph);
+		
 		pr_info("%d %d %d %d %d\n",info->deg1cnt, info->deg2cnt, info->deg3cnt, info->mindepth, info->maxdepth);
+		
 		ret = copy_to_user( (struct obj_info*)arg, info, sizeof(struct obj_info));
+		
+		if(!ret)
+		{
+			return -EINVAL;
+		}	
+		
 		pr_info("The copy to user value is %d\n",ret);
 		
 		if(ret == 0)
@@ -686,10 +697,40 @@ static long process_ioctl_handler(struct file * fptr,
 	case PB2_GET_OBJ:
 	{
 		// IMPLEMENT: @RahulKrantiKiran please implement 
-		// get_info and get_obj routines for the function 
 		pr_info("process %d -> ioctl search object", entry_ptr->pid);
 		
-				
+		ret = copy_from_user(&objptr, (struct obj_info *) arg,  sizeof(struct search_obj));
+
+		if(!ret)
+		{
+			return -EINVAL;
+		}
+		
+		if((unsigned char) objptr.objtype == DATA_TYPE_INT) node = search_graph(entry_ptr->graph, &objptr.int_obj);
+		else node = search_graph(entry_ptr->graph, objptr.str);
+
+		if(node == NULL) 
+		{
+			objptr.found = 1;
+			objptr.len = -1;
+			ret = copy_to_user((struct obj_info *) arg, &objptr, sizeof(struct obj_info ));
+			return 0;
+		}
+		
+		objptr.found = 0;
+
+		if(entry_ptr->type == DATA_TYPE_STRING)
+		{
+			//objptr->len = strlen(node->str);
+		}
+
+		ret = copy_to_user((struct obj_info *) arg, &objptr, sizeof(struct obj_info ));
+		
+		if(!ret)
+		{
+			return -EINVAL;
+		}
+					
 		return 0;
 	}
 	break;
@@ -734,6 +775,7 @@ static ssize_t process_write_handler(struct file * fptr,
 	else
 	{
 		add_node(entry_ptr->graph, (void *)buffer, entry_ptr->type);
+		pr_info("recieving information %d\n", *(int32_t *) buffer);
 
 	}
 
