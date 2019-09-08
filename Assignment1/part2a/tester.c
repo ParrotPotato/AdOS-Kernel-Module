@@ -9,7 +9,7 @@
 #include <time.h>
 #include <stdlib.h>
 
-const char * FILENAME = "/proc/temp_process_entry";
+const char * FILENAME = "/proc/partb_1_16CS30023_16CS10018";
 const char SORT_TYPE_INT = 0xff;
 const char SORT_TYPE_STRING = 0xf0;
 

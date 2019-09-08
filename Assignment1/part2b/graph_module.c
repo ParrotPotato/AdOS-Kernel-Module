@@ -826,7 +826,7 @@ static void clean_process_list(void){
 static __init int init_module_assign(void)
 {
 	
-	pr_info("Creating Process : temp_proccess_entry\n");
+	pr_info("Creating Process : partb_1_16CS30023_16CS10018\n");
 	
 	process_list_lock = (struct semaphore *) vmalloc(sizeof(struct semaphore));
 	sema_init(process_list_lock, 1);
@@ -834,7 +834,7 @@ static __init int init_module_assign(void)
 	process_list = (struct list_head *) vmalloc(sizeof(struct list_head));
 	INIT_LIST_HEAD(process_list);	
 
-	process_entry = proc_create("temp_process_entry", 0777, NULL, &process_operations);
+	process_entry = proc_create("partb_2_16CS30023_16CS10018", 0777, NULL, &process_operations);
 	
 	pr_info("Process Created\n");	
 	return 0;
@@ -843,7 +843,7 @@ static __init int init_module_assign(void)
 
 static __exit void exit_module_assign(void)
 {
-	pr_info("Removing Process : temp_process_entry\n");
+	pr_info("Removing Process : partb_1_16CS30023_16CS10018\n");
 
 	proc_remove(process_entry);
 

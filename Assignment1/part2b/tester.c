@@ -11,7 +11,7 @@
 
 #include "graph_module.h"
 
-const char * FILENAME = "/proc/temp_process_entry";
+const char * FILENAME = "/proc/partb_2_16CS30023_16CS10018";
 
 int main()
 {
