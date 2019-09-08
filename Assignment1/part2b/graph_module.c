@@ -575,7 +575,7 @@ static ssize_t process_read_handler(struct file * fptr,
 		entry_ptr->state = PROCESS_READ_STATE;
 
 
-		TEST_show_all_nodes(entry_ptr->graph, 0);
+		//TEST_show_all_nodes(entry_ptr->graph, 0);
 	}
 
 
